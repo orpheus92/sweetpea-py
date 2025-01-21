@@ -9,7 +9,7 @@ from sweetpea import (
     Factor, DerivedLevel, WithinTrial, Transition,
     CrossBlock, AtMostKInARow,
     synthesize_trials, RandomGen,
-    print_experiments
+    print_experiments, tabulate_experiments
 )
 
 color_list = ["red", "green", "blue"]
@@ -34,11 +34,20 @@ def one_diff(colors, words):
 def both_diff(colors, words):
     return (colors[0] != colors[-1]) and (words[0] != words[-1])
 
-one = DerivedLevel("one", Transition(one_diff, [color, word]))
-both = DerivedLevel("both", Transition(both_diff, [color, word]))
-changed = Factor("changed", [one, both])
 
-block        = CrossBlock([color,word,congruence,changed], [color,word,changed], [])
+def both_same(colors, words):
+    return (colors[0] == colors[-1]) and (words[0] == words[-1])
+
+one = DerivedLevel("one", Transition(one_diff, [color, word]),1)
+both = DerivedLevel("both", Transition(both_diff, [color, word]),1)
+other = DerivedLevel("other", Transition(both_same, [color, word]),1)
+
+changed = Factor("changed", [one, both, other])
+
+crossing = [color,word,changed]
+
+
+block        = CrossBlock([color,word,congruence,changed], crossing, [])
 
 experiments  = synthesize_trials(block, 1)
 
@@ -50,3 +59,5 @@ experiments  = synthesize_trials(block, 1)
 # to find solutions, but it's not fast.
 
 print_experiments(block, experiments)
+
+tabulate_experiments(block, experiments, [changed])#crossing)
