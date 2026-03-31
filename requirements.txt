@@ -24,8 +24,11 @@ networkx==2.5
 numpy==1.26.0
 packaging==20.9
 pluggy==0.13.1
+pycmsgen==6.1.1
+pycryptosat==5.11.21
 pyparsing==2.4.7
 pytest==7.3.0
+pyunigen==2.5.8
 requests==2.25.1
 toml==0.10.2
 tqdm==4.31.1
