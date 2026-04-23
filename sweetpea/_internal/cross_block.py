@@ -534,38 +534,93 @@ class CrossBlock(MultiCrossBlock):
         :class:`.Constraint`.
     """
 
+    def __new__(cls,
+                design: Sequence[Union[Factor, MultiCrossBlockRepeat]],
+                crossing: Sequence[Union[Factor, MultiCrossBlockRepeat]],
+                constraints: List[Constraint],
+                require_complete_crossing: bool = True,
+                num_permutations: Optional[int] = None):
+        # Only dispatch when constructing CrossBlock itself.
+        # Subclasses should keep normal object creation.
+        if cls is not CrossBlock:
+            return super().__new__(cls)
+
+        inner_blocks = [x for x in design if isinstance(x, MultiCrossBlockRepeat)]
+
+        # Ordinary CrossBlock path: no block in design.
+        if not inner_blocks:
+            return super().__new__(cls)
+
+        # Nested path: exactly one block in design.
+        if len(inner_blocks) != 1:
+            raise ValueError("CrossBlock supports at most one block in `design`.")
+
+        # Let NestedBlock decide whether this is plain nested or permuted.
+        return NestedBlock(
+            design=design,
+            crossing=crossing,
+            constraints=constraints,
+            require_complete_crossing=require_complete_crossing,
+            num_permutations=num_permutations
+        )
+
+
     def __init__(self,
-                 design: List[Factor],
-                 crossing: List[Factor],
+                 design: Sequence[Union[Factor, MultiCrossBlockRepeat]],
+                 crossing: Sequence[Union[Factor, MultiCrossBlockRepeat]],
                  constraints: List[Constraint],
-                 require_complete_crossing: bool = True):
+                 require_complete_crossing: bool = True,
+                 num_permutations: Optional[int] = None):
         who = "CrossBlock"
         argcheck(who, design, make_islistof(Factor), "list of Factors for design")
         argcheck(who, crossing, make_islistof(Factor), "list of Factors for crossing")
         # Not sure whether constraints can be used here. To Do.
         argcheck(who, constraints, make_islistof(Constraint), "list of Constraints for constraints")
-        self._create(who, design, [crossing], constraints, require_complete_crossing, None)
-
+        # self._create(who, design, [crossing], constraints, require_complete_crossing, None)
+        self._create(who, cast(List[Factor], design), [cast(List[Factor], crossing)],
+                     constraints, require_complete_crossing, None)
 
 class NestedBlock(MultiCrossBlockRepeat):
     def __init__(self,
-                 design: List[Union[Factor, MultiCrossBlockRepeat]],
-                 crossing: List[Union[Factor, MultiCrossBlockRepeat]],
-                 constraints: Optional[List[Constraint]] = None,
+                 design: Sequence[Union[Factor, MultiCrossBlockRepeat]],
+                 crossing: Sequence[Union[Factor, MultiCrossBlockRepeat]],
+                 constraints: List[Constraint],
+                 require_complete_crossing: bool = True,
                  num_permutations: Optional[int] = None):
         from itertools import permutations as _perms
         from sweetpea._internal.constraint import (
             MinimumTrials, ExactlyK, ConstantInWindows, OrderRunsByPermutation
         )
 
-        if constraints is None:
-            constraints = []
+        who = "NestedBlock"
+        argcheck(who, constraints, make_islistof(Constraint), "list of Constraints for constraints")
+
+        if not require_complete_crossing:
+            raise ValueError("NestedBlock currently requires require_complete_crossing=True.")
+
+        # if constraints is None:
+        #     constraints = []
 
         # ---- find inner block and externals at this level
         inner_blocks = [x for x in design if isinstance(x, MultiCrossBlockRepeat)]
         if len(inner_blocks) != 1:
             raise ValueError("NestedBlock expects exactly one inner block in `design`.")
         inner_block = inner_blocks[0]
+
+        crossing_blocks = [x for x in crossing if isinstance(x, MultiCrossBlockRepeat)]
+
+        if len(crossing_blocks) > 1:
+            raise ValueError("NestedBlock supports at most one block in `crossing`.")
+
+        if crossing_blocks and crossing_blocks[0] is not inner_block:
+            raise ValueError(
+                "If `crossing` contains a block, it must be the same block that appears in `design`."
+            )
+
+        if crossing_blocks and isinstance(inner_block, NestedBlock):
+            raise ValueError(
+                "NestedBlock in `crossing` is not supported yet."
+            )
 
         externals: List[Factor] = [x for x in design if isinstance(x, Factor)]
         # externals explicitly requested to be *jointly crossed* at this level
@@ -824,6 +879,7 @@ class NestedBlock(MultiCrossBlockRepeat):
             "run_len": self.run_len,
             "external_design": self._external_block.design
         }
+
 
 class Repeat(MultiCrossBlockRepeat):
     def __init__(self,

@@ -387,10 +387,10 @@ def test_permuted_mode_with_inner_preamble(inner_2x2):
 def test_permuted_mode_rejects_bad_num_permutations(inner_2x2):
     g = Factor("g", levels(["x", "y"]))
     with pytest.raises(ValueError):
-        NestedBlock(design=[g, inner_2x2], crossing=[inner_2x2, g], num_permutations=0)
+        NestedBlock(design=[g, inner_2x2], crossing=[inner_2x2, g], constraints=[], num_permutations=0)
     with pytest.raises(ValueError):
         # 2x2 inner crossing => 4 combos => 4! = 24 permutations; 25 invalid
-        NestedBlock(design=[g, inner_2x2], crossing=[inner_2x2, g], num_permutations=25)
+        NestedBlock(design=[g, inner_2x2], crossing=[inner_2x2, g], constraints=[], num_permutations=25)
 
 
 def test_nested_block_requires_single_inner_block_in_design(inner_2x2):
@@ -399,7 +399,7 @@ def test_nested_block_requires_single_inner_block_in_design(inner_2x2):
                              crossing=inner_2x2.orig_crossings[0],
                              constraints=[])
     with pytest.raises(ValueError):
-        NestedBlock(design=[inner_2x2, other_inner], crossing=[inner_2x2])
+        NestedBlock(design=[inner_2x2, other_inner], crossing=[inner_2x2], constraints=[])
 
 
 def test_nested_block_crossing_rules(inner_2x2):
@@ -520,6 +520,7 @@ def test_permuted_mode_can_produce_k_in_a_row(inner_2x2, target_level, k):
     nb = NestedBlock(
         design=[group, inner_2x2],
         crossing=[inner_2x2, group],
+        constraints=[],
         num_permutations=2
     )
 
@@ -633,7 +634,7 @@ def test_sampling_strategies_return_expected_number_of_experiments():
     B = Factor("B", ["b1", "b2"])
     inner = CrossBlock([A, B], [A, B], [])
     session = Factor("session", [SimpleLevel("s1"), SimpleLevel("s2")])
-    nb = NestedBlock([session, inner], [inner, session], num_permutations=2)
+    nb = NestedBlock([session, inner], [inner, session], constraints=[], num_permutations=2)
 
     import importlib.util
 
@@ -716,7 +717,7 @@ def test_nestedblock_refreshes_permutations_each_time():
     B = Factor("B", ["b1", "b2"])
     inner = CrossBlock([A, B], [A, B], [])
     session = Factor("session", [SimpleLevel("s1"), SimpleLevel("s2")])
-    nb = NestedBlock([session, inner], [inner, session], num_permutations=2)
+    nb = NestedBlock([session, inner], [inner, session], constraints=[], num_permutations=2)
 
     # First sample
     synthesize_trials(nb, 1000, sampling_strategy=IterateGen)
