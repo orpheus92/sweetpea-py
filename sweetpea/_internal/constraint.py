@@ -1270,3 +1270,231 @@ class Sequential(Constraint):
 def _val_name(x):
     # Works for Level objects or plain strings
     return getattr(x, "name", x)
+
+
+class CoverAllCombinations(Constraint):
+    """Coordinates the otherwise-free factor choices across the inner-block instances
+    of a :class:`.Nest`, so that the *union* of all instances covers every realizable
+    combination of `factors` at least once.
+
+    The number of inner-block instances needed for coverage is computed automatically,
+    and the enclosing :class:`.Nest` is grown to fit (see :class:`.Nest`).
+
+    Usage::
+
+        Nest(outer, inner, [CoverAllCombinations(color, word)])
+        Nest(outer, inner, [CoverAllCombinations(color, word, name="Participant")])
+
+    All `factors` must belong to the inner block. When `name` is given,
+    :func:`.print_experiments` sections each experiment by inner-block instance,
+    labeled ``"<name> N:"``.
+    """
+
+    def __init__(self, *factors, name: Optional[str] = None):
+        who = "CoverAllCombinations"
+        factor_list = list(factors)
+        if factor_list == []:
+            raise ValueError(who, "factor list must be non-empty")
+        argcheck(who, factor_list, make_islistof(Factor), "factors")
+        self.factors = factor_list
+        self.name = name
+        # Set by Nest during construction (the inner block and its post-preamble length),
+        # so that validate/apply and print sectioning have the inner context they need.
+        self._inner_block = cast(Optional[MultiCrossBlockRepeat], None)
+        self._inner_len = cast(Optional[int], None)
+
+    # ~~~~~~~~~~~~~~ Coverage analysis (the "K" computation) ~~~~~~~~~~~~~~
+
+    def _coverage_analysis(self, inner_block):
+        """Structural analysis over `self.factors` for the given inner block.
+
+        Returns ``(R, forced, R_free, slots, combo_levels)`` where:
+
+        - ``R``: realizable listed-factor combos, each a tuple of
+          ``(factor_name, level_name)`` pairs in `self.factors` order;
+        - ``forced``: combos guaranteed in *every* instance by the inner crossing
+          (cells where the listed factors are fully pinned);
+        - ``R_free``: ``R - forced``, the combos that must be placed in free slots;
+        - ``slots``: for each free inner-crossing cell, the set of ``R_free`` combos it
+          can instantiate (a "slot-type", with capacity one pick per instance);
+        - ``combo_levels``: maps each combo to its ``{factor: level}`` dict (for CNF).
+        """
+        listed = self.factors
+        if not inner_block.crossings:
+            return (set(), set(), set(), [], {})
+        crossing_factors = list(inner_block.crossings[0])
+        listed_free = [f for f in listed if f not in crossing_factors]
+        crossing_level_lists = [list(f.levels) for f in crossing_factors]
+        free_level_lists = [list(f.levels) for f in listed_free]
+        free_assignments = list(product(*free_level_lists)) if listed_free else [()]
+
+        R = set()                      # type: set
+        forced = set()                 # type: set
+        slot_sets = []                 # type: List[set]
+        combo_levels = {}              # type: Dict[tuple, Dict[Factor, Any]]
+        for cell in product(*crossing_level_lists):
+            di_cell = {crossing_factors[i]: cell[i] for i in range(len(crossing_factors))}
+            cand = set()
+            for fa in free_assignments:
+                di = dict(di_cell)
+                for j, f in enumerate(listed_free):
+                    di[f] = fa[j]
+                if inner_block.is_excluded_or_inconsistent_combination(di):
+                    continue
+                combo = tuple((f.name, di[f].name) for f in listed)
+                cand.add(combo)
+                if combo not in combo_levels:
+                    combo_levels[combo] = {f: di[f] for f in listed}
+            if not cand:
+                continue
+            R |= cand
+            if len(cand) == 1:
+                forced |= cand
+            else:
+                slot_sets.append(cand)
+        R_free = R - forced
+        slots = [s & R_free for s in slot_sets]
+        slots = [s for s in slots if s]
+        return (R, forced, R_free, slots, combo_levels)
+
+    def required_instances(self, inner_block=None):
+        """Minimum number of inner-block instances (K) needed to cover ``R_free``."""
+        inner_block = inner_block if inner_block is not None else self._inner_block
+        (_, _, R_free, slots, _) = self._coverage_analysis(inner_block)
+        return self._min_instances(R_free, slots)
+
+    @staticmethod
+    def _min_instances(R_free, slots):
+        who = "CoverAllCombinations"
+        if not R_free:
+            return 1
+        combos = list(R_free)
+        for c in combos:
+            if not any(c in s for s in slots):
+                raise ValueError((who, "combination {} cannot be produced in any free "
+                                       "trial; coverage is impossible".format(c)))
+        upper = len(combos)
+        for k in range(1, upper + 1):
+            if CoverAllCombinations._feasible(combos, slots, k):
+                return k
+        return upper
+
+    @staticmethod
+    def _feasible(combos, slots, k):
+        """Can `combos` be covered with each slot-type covering at most `k` combos?
+
+        Bipartite matching where each slot-type has `k` copies (capacity), via Kuhn's
+        augmenting-path algorithm. Sizes are small for experimental designs.
+        """
+        adj = [[si for si, s in enumerate(slots) if c in s] for c in combos]
+        slot_copy_match = {}  # type: Dict[tuple, int]
+
+        def augment(ci, visited):
+            for si in adj[ci]:
+                for copy in range(k):
+                    key = (si, copy)
+                    if key in visited:
+                        continue
+                    visited.add(key)
+                    if key not in slot_copy_match or augment(slot_copy_match[key], visited):
+                        slot_copy_match[key] = ci
+                        return True
+            return False
+
+        matched = 0
+        for ci in range(len(combos)):
+            if augment(ci, set()):
+                matched += 1
+        return matched == len(combos)
+
+    # ~~~~~~~~~~~~~~ Constraint interface ~~~~~~~~~~~~~~
+
+    def section_length(self, block) -> int:
+        """Trials per inner-block instance, used by print_experiments sectioning."""
+        return self._inner_len if self._inner_len else 0
+
+    def uses_factor(self, f: Factor) -> bool:
+        return any(factor.uses_factor(f) for factor in self.factors)
+
+    def desugar(self, replacements: dict) -> List[Constraint]:
+        factors = [replacements.get(f, [f, f])[1] for f in self.factors]
+        c = CoverAllCombinations(*factors, name=self.name)
+        c._inner_block = self._inner_block
+        c._inner_len = self._inner_len
+        return [c]
+
+    def validate(self, block: Block) -> None:
+        who = "CoverAllCombinations"
+        # Check weights first (on the factor object directly): weighted factors get
+        # desugared, so a has_factor-based check would otherwise mask the real reason.
+        for f in self.factors:
+            if f.level_weight_sum() != len(f.levels):
+                raise ValueError((who, "weighted levels not currently supported"))
+        for f in self.factors:
+            validate_factor(block, f)
+        if self._inner_block is None:
+            raise ValueError((who, "CoverAllCombinations is only meaningful inside a Nest"))
+        # All listed factors must live in the inner block (v1 scope).
+        for f in self.factors:
+            if not self._inner_block.has_factor(f):
+                raise ValueError((who, "factor '{}' must be in the inner block".format(f.name)))
+        # Must be disjoint from any LatinSquare / Sequential on the same block: those
+        # would pin a factor the coverage model assumes free.
+        for ct in block.constraints:
+            if isinstance(ct, LatinSquare):
+                shared = [f.name for f in self.factors if f in ct.factors]
+                if shared:
+                    raise ValueError((who, "factors {} also appear in a LatinSquare "
+                                           "constraint".format(shared)))
+            if isinstance(ct, Sequential):
+                if ct.factor in self.factors:
+                    raise ValueError((who, "factor '{}' also appears in a Sequential "
+                                           "constraint".format(ct.factor.name)))
+        # Feasibility (also raises on an impossible-to-cover combination).
+        self.required_instances(self._inner_block)
+
+    def apply(self, block: Block, backend_request: BackendRequest) -> None:
+        (_, _, R_free, _, combo_levels) = self._coverage_analysis(self._inner_block)
+        if not R_free:
+            return
+        preamble = block.common_preamble_size()
+        num_trials = block.trials_per_sample()
+        trials = list(range(1 + preamble, num_trials + 1))
+
+        fresh = backend_request.fresh
+        formula_parts = cast(List[Formula], [])
+        for combo in R_free:
+            levels = combo_levels[combo]
+            state_vars = []
+            for t in trials:
+                sv = fresh
+                fresh += 1
+                state_vars.append(sv)
+                formula_parts.append(Iff(sv, And(list(block.encode_combination(levels, t)))))
+            # "at least once": at least one trial instantiates this combination.
+            formula_parts.append(Or(state_vars))
+
+        (cnf, new_fresh) = block.cnf_fn(And(formula_parts), fresh)
+        backend_request.cnfs.append(cnf)
+        backend_request.fresh = new_fresh
+
+    def potential_sample_conforms(self, sample: dict, block: Block) -> bool:
+        (_, _, R_free, _, _) = self._coverage_analysis(self._inner_block)
+        if not R_free:
+            return True
+        num_trials = block.trials_per_sample()
+        for combo in R_free:
+            need = dict(combo)  # factor_name -> level_name
+            found = False
+            for t in range(num_trials):
+                if all(sample[f][t].name == need[f.name] for f in self.factors):
+                    found = True
+                    break
+            if not found:
+                return False
+        return True
+
+    def __repr__(self):
+        return "CoverAllCombinations({}{})".format(
+            ", ".join([f.name for f in self.factors]),
+            ", name={!r}".format(self.name) if self.name else "")

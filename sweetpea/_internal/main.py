@@ -22,6 +22,7 @@ __all__ = [
     'ExactlyKInARow',
     'LatinSquare',
     'Sequential',
+    'CoverAllCombinations',
 
     'Gen', 'RandomGen', 'IterateSATGen',
     'CMSGen', 'UniGen', 'IterateILPGen',
@@ -53,7 +54,8 @@ from sweetpea._internal.constraint import (
     Exclude, Pin, MinimumTrials,
     ExactlyK, AtMostKInARow, AtLeastKInARow, ExactlyKInARow,
     LatinSquare,
-    Sequential
+    Sequential,
+    CoverAllCombinations
 )
 from sweetpea._internal.sampling_strategy.base import Gen
 from sweetpea._internal.sampling_strategy.uniform import UniformGen
@@ -170,22 +172,32 @@ def print_experiments(block, experiments):
     # Restore continuous factors for printing trials
     block.restore_continuous()
 
-    ls_name = None
-    ls_dlen = 0
+    # A LatinSquare or CoverAllCombinations constraint with a name divides each
+    # experiment's trials into labeled sections. LatinSquare diagonal labels cycle;
+    # CoverAllCombinations instance labels are sequential (0, 1, ... K-1).
+    sec_name = None
+    sec_len = 0
+    sec_cycle = False
     for ct in block.orig_constraints:
         if isinstance(ct, LatinSquare) and ct.name:
-            ls_name = ct.name
-            ls_dlen = ct.diagonal_length()
+            sec_name = ct.name
+            sec_len = ct.diagonal_length()
+            sec_cycle = True
+        elif isinstance(ct, CoverAllCombinations) and ct.name:
+            sec_name = ct.name
+            sec_len = ct.section_length(block)
+            sec_cycle = False
 
     print('\n{} trial sequences found.\n'.format(len(experiments)))
     for idx, e in enumerate(experiments):
         print('Experiment {}:'.format(idx))
         e_len = len(e[next(iter(e))])
-        if ls_name:
+        if sec_name and sec_len:
             print('')
-            for i in range(0, e_len, ls_dlen):
-                print('{} {}:'.format(ls_name, (i // ls_dlen) % ls_dlen))
-                _print_experiment_participant(block.orig_design,  e, i, min(i+ls_dlen, e_len))
+            for i in range(0, e_len, sec_len):
+                label = (i // sec_len) % sec_len if sec_cycle else (i // sec_len)
+                print('{} {}:'.format(sec_name, label))
+                _print_experiment_participant(block.orig_design, e, i, min(i+sec_len, e_len))
         else:
             _print_experiment_participant(block.orig_design, e, 0, e_len)
 

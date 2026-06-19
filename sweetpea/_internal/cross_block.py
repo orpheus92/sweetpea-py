@@ -655,6 +655,24 @@ class Nest(MultiCrossBlockRepeat):
         for ct in outer_constraints:
             ct.sustain_within_block(inner_len)
         all_constraints = outer_constraints + inner_constraints + constraints
+
+        # Auto-size for any CoverAllCombinations constraint: grow the number of
+        # inner-block instances to the minimum needed for coverage, rounded up to a
+        # multiple of the outer crossing size so the outer crossing stays balanced.
+        from sweetpea._internal.constraint import CoverAllCombinations, MinimumTrials
+        outer_instances = outer_block.trials_per_sample() - outer_block.common_preamble_size()
+        for ct in constraints:
+            if isinstance(ct, CoverAllCombinations):
+                ct._inner_block = inner_block
+                ct._inner_len = inner_len
+                # Only auto-size when the listed factors are valid inner-block factors;
+                # otherwise let _create's validate() raise a clear scope error.
+                if all(inner_block.has_factor(f) for f in ct.factors):
+                    k = ct.required_instances(inner_block)
+                    if outer_instances > 0:
+                        k = ((k + outer_instances - 1) // outer_instances) * outer_instances
+                    all_constraints = all_constraints + [MinimumTrials(k * inner_len)]
+
         self._create(
             who=who,
             design=design,
