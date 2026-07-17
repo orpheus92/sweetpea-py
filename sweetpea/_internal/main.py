@@ -428,10 +428,9 @@ def synthesize_trials(block: Block,
         # Restore ContinuousFactor to the design
 
     if not trialss:
-        # When a coverage constraint is present, an empty result usually means the
-        # SAT solver judged the joint constraints unsatisfiable. Constraints that
-        # are not folded into coverage auto-sizing (ordering constraints and
-        # LatinSquare) are the usual cause; give the user a pointer.
+        # With a coverage constraint, an empty result means the solver found the
+        # joint constraints unsatisfiable. Point at the constraints that coverage
+        # auto-sizing cannot account for (ordering constraints and LatinSquare).
         from sweetpea._internal.constraint import _KInARow
         cacs = [ct for ct in block.orig_constraints if isinstance(ct, CoverAllCombinations)]
         if cacs:

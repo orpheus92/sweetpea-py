@@ -115,10 +115,8 @@ class MultiCrossBlockRepeat(Block):
         if not all([s == self.preamble_sizes[0] for s in self.preamble_sizes]) and self.alignment == AlignmentMode.EQUAL_PREAMBLE:
             raise RuntimeError("AlignmentMode.EQUAL_PREAMBLE not allowed with different preamble sizes")
 
-        # Auto-size for any CoverAllCombinations constraint: grow the trial count to
-        # the minimum needed for coverage. This runs in the shared construction path
-        # so that every construct (CrossBlock, Merge, Repeat, Nest) auto-sizes, and
-        # before trials_per_sample() is first cached.
+        # Auto-size for CoverAllCombinations: raise the trial count to the minimum
+        # needed for coverage. Must run before trials_per_sample() is first cached.
         for ct in self.constraints:
             if isinstance(ct, CoverAllCombinations):
                 target = ct.autosize_trials(self)
@@ -673,8 +671,8 @@ class Nest(MultiCrossBlockRepeat):
             ct.sustain_within_block(inner_len)
         all_constraints = outer_constraints + inner_constraints + constraints
 
-        # Give any CoverAllCombinations constraint its inner-block context; the
-        # shared _create path performs the auto-sizing.
+        # A CoverAllCombinations constraint analyzes the inner block's crossing;
+        # _create's auto-sizing reads this.
         from sweetpea._internal.constraint import CoverAllCombinations
         for ct in constraints:
             if isinstance(ct, CoverAllCombinations):

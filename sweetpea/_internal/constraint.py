@@ -1321,9 +1321,10 @@ class CoverAllCombinations(Constraint):
         return list(c) if c is not None else []
 
     def _combo_is_impossible(self, block, di) -> bool:
-        """Block-agnostic realizability: explicit/implicit exclusions, plus
-        consistency of every derived factor present in the combination (no
-        assumption that the derived factor sits in ``crossings[0]``)."""
+        """Whether a combination is unrealizable: excluded, or inconsistent with
+        the definition of a derived factor in the combination. (Unlike
+        ``Block.is_excluded_or_inconsistent_combination``, checks every derived
+        factor present, not just those in the block's first crossing.)"""
         if block.is_excluded_combination(di):
             return True
         for f in di:
@@ -1565,8 +1566,8 @@ class CoverAllCombinations(Constraint):
 
     @staticmethod
     def _k_lower_bound(R_free, slots, slot_weights=None):
-        """Analytic floor for the instance count, so the matching scan can start
-        near the answer instead of at 1:
+        """Analytic floor for the instance count, letting the matching scan start
+        near the answer:
 
         - global capacity: ceil(|R_free| / total picks per instance);
         - Hall-style signature bounds: combos grouped by the exact set of slots
@@ -1654,17 +1655,14 @@ class CoverAllCombinations(Constraint):
 
     def validate(self, block: Block) -> None:
         who = "CoverAllCombinations"
-        # Weighted levels are not supported yet (checked on the factor object directly:
-        # weighted factors get desugared, so a has_factor-based check would otherwise
-        # mask the real reason).
+        # The weight check must precede validate_factor: desugaring replaces
+        # weighted factors, so validate_factor would report a misleading
+        # "not found" instead.
         for f in self.factors:
             if f.level_weight_sum() != len(f.levels):
                 raise ValueError((who, "weighted levels not currently supported"))
         for f in self.factors:
             validate_factor(block, f)
-        # No coexistence guards: other constraints (LatinSquare, Sequential, Pin, ...)
-        # are reconciled into the sizing computation where statically possible, and
-        # otherwise arbitrated by the SAT solver in the joint problem.
 
     def apply(self, block: Block, backend_request: BackendRequest) -> None:
         (_, _, R_free, _, combo_levels, _, _) = self._coverage_analysis(
@@ -1685,7 +1683,7 @@ class CoverAllCombinations(Constraint):
                 fresh += 1
                 state_vars.append(sv)
                 formula_parts.append(Iff(sv, And(list(block.encode_combination(levels, t)))))
-            # "at least once": at least one trial instantiates this combination.
+            # At least one trial must instantiate this combination.
             formula_parts.append(Or(state_vars))
 
         (cnf, new_fresh) = block.cnf_fn(And(formula_parts), fresh)

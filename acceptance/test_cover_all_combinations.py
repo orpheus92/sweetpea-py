@@ -120,19 +120,20 @@ def test_repeat_autosizes():
         assert _covers_all(e, colors)
 
 
-# ~~~~~~~~~~~~ Coexistence (no construction-time guards) ~~~~~~~~~~~~
+# ~~~~~~~~~~~~ Interaction with other constraints ~~~~~~~~~~~~
 
-def test_coexists_outer_factor_listed():
-    # Listing an outer factor no longer errors; the solver arbitrates.
+def test_outer_factor_listed_constructs():
+    # An outer-block factor in the listed set is not statically sized; the
+    # solver arbitrates. Construction must succeed.
     _, color, word, _, inner = _stroop(3)
     instance = Factor('instance', ['a', 'b'])
     outer = CrossBlock([instance], [instance], [])
     Nest(outer, inner, [CoverAllCombinations(instance, color)])
 
 
-def test_coexists_sequential_shared_factor():
-    # Sequential pins word per position; the positional reconciliation still
-    # finds K=2 (12 trials), and synthesis must produce covering sequences.
+def test_sequential_on_listed_factor():
+    # Sequential pins word per position; positional sizing finds K=2 (12
+    # trials), and synthesis must produce covering sequences.
     colors, color, word, congruency, inner = _stroop(3)
     instance = Factor('instance', ['a', 'b'])
     outer = CrossBlock([instance], [instance], [])
@@ -146,15 +147,15 @@ def test_coexists_sequential_shared_factor():
         assert e['word'] == (colors * 4)[:len(e['word'])]
 
 
-def test_coexists_latin_square_shared_factors():
-    colors, color, word, nest = _stroop_nest(3, [])
-    _, c2, w2, _, inner2 = _stroop(3)
+def test_latin_square_on_listed_factors():
+    # LatinSquare and CoverAllCombinations over the same factors: the solver
+    # satisfies both (LatinSquare's rotations themselves yield full coverage).
+    colors, color, word, congruency, inner = _stroop(3)
     instance = Factor('instance', ['a', 'b'])
     outer = CrossBlock([instance], [instance], [])
-    # Same factors in LatinSquare and CoverAllCombinations: constructs, solver decides.
-    nest2 = Nest(outer, inner2, [LatinSquare([c2, w2], name='P'),
-                                 CoverAllCombinations(c2, w2)])
-    exps = synthesize_trials(nest2, 1, sampling_strategy=IterateGen)
+    nest = Nest(outer, inner, [LatinSquare([color, word], name='P'),
+                               CoverAllCombinations(color, word)])
+    exps = synthesize_trials(nest, 1, sampling_strategy=IterateGen)
     for e in exps:
         assert _covers_all(e, colors)
 
@@ -290,7 +291,7 @@ def test_unmodeled_conflict_yields_hint(capsys):
     assert 'AtLeastKInARow' in out
 
 
-# ~~~~~~~~~~~~ Remaining validation errors ~~~~~~~~~~~~
+# ~~~~~~~~~~~~ Validation errors ~~~~~~~~~~~~
 
 def test_error_weighted_levels():
     colors = ['red', 'green', 'blue']
