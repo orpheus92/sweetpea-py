@@ -91,7 +91,7 @@ class MultiCrossBlockRepeat(Block):
 
         crossings = [c for c in crossings if len(c) > 0]
 
-        from sweetpea._internal.constraint import Cross, Consistency, Sustain
+        from sweetpea._internal.constraint import Cross, Consistency, Sustain, CoverAllCombinations
         from sweetpea._internal.derivation_processor import DerivationProcessor
         self.orig_design = design
         self.orig_crossings = crossings
@@ -114,6 +114,23 @@ class MultiCrossBlockRepeat(Block):
         
         if not all([s == self.preamble_sizes[0] for s in self.preamble_sizes]) and self.alignment == AlignmentMode.EQUAL_PREAMBLE:
             raise RuntimeError("AlignmentMode.EQUAL_PREAMBLE not allowed with different preamble sizes")
+
+        # Auto-size for any CoverAllCombinations constraint: grow the trial count to
+        # the minimum needed for coverage. This runs in the shared construction path
+        # so that every construct (CrossBlock, Merge, Repeat, Nest) auto-sizes, and
+        # before trials_per_sample() is first cached.
+        for ct in self.constraints:
+            if isinstance(ct, CoverAllCombinations):
+                target = ct.autosize_trials(self)
+                if target > self.min_trials:
+                    self.min_trials = target
+                    for count in self.crossing_sustain_counts:
+                        # keep min_trials a multiple of each sustain count
+                        if (self.min_trials // count) * count != self.min_trials:
+                            self.min_trials = ((self.min_trials // count) + 1) * count
+                    # A constraint's validate() (e.g. Pin's range check) may have
+                    # already cached the pre-growth trial count; invalidate it.
+                    self._trials_per_sample = None
 
         if mode != RepeatMode.REPEAT:
             num_trials = self.trials_per_sample()
@@ -656,22 +673,12 @@ class Nest(MultiCrossBlockRepeat):
             ct.sustain_within_block(inner_len)
         all_constraints = outer_constraints + inner_constraints + constraints
 
-        # Auto-size for any CoverAllCombinations constraint: grow the number of
-        # inner-block instances to the minimum needed for coverage, rounded up to a
-        # multiple of the outer crossing size so the outer crossing stays balanced.
-        from sweetpea._internal.constraint import CoverAllCombinations, MinimumTrials
-        outer_instances = outer_block.trials_per_sample() - outer_block.common_preamble_size()
+        # Give any CoverAllCombinations constraint its inner-block context; the
+        # shared _create path performs the auto-sizing.
+        from sweetpea._internal.constraint import CoverAllCombinations
         for ct in constraints:
             if isinstance(ct, CoverAllCombinations):
                 ct._inner_block = inner_block
-                ct._inner_len = inner_len
-                # Only auto-size when the listed factors are valid inner-block factors;
-                # otherwise let _create's validate() raise a clear scope error.
-                if all(inner_block.has_factor(f) for f in ct.factors):
-                    k = ct.required_instances(inner_block)
-                    if outer_instances > 0:
-                        k = ((k + outer_instances - 1) // outer_instances) * outer_instances
-                    all_constraints = all_constraints + [MinimumTrials(k * inner_len)]
 
         self._create(
             who=who,

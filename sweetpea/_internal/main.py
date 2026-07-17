@@ -172,32 +172,22 @@ def print_experiments(block, experiments):
     # Restore continuous factors for printing trials
     block.restore_continuous()
 
-    # A LatinSquare or CoverAllCombinations constraint with a name divides each
-    # experiment's trials into labeled sections. LatinSquare diagonal labels cycle;
-    # CoverAllCombinations instance labels are sequential (0, 1, ... K-1).
-    sec_name = None
-    sec_len = 0
-    sec_cycle = False
+    ls_name = None
+    ls_dlen = 0
     for ct in block.orig_constraints:
         if isinstance(ct, LatinSquare) and ct.name:
-            sec_name = ct.name
-            sec_len = ct.diagonal_length()
-            sec_cycle = True
-        elif isinstance(ct, CoverAllCombinations) and ct.name:
-            sec_name = ct.name
-            sec_len = ct.section_length(block)
-            sec_cycle = False
+            ls_name = ct.name
+            ls_dlen = ct.diagonal_length()
 
     print('\n{} trial sequences found.\n'.format(len(experiments)))
     for idx, e in enumerate(experiments):
         print('Experiment {}:'.format(idx))
         e_len = len(e[next(iter(e))])
-        if sec_name and sec_len:
+        if ls_name:
             print('')
-            for i in range(0, e_len, sec_len):
-                label = (i // sec_len) % sec_len if sec_cycle else (i // sec_len)
-                print('{} {}:'.format(sec_name, label))
-                _print_experiment_participant(block.orig_design, e, i, min(i+sec_len, e_len))
+            for i in range(0, e_len, ls_dlen):
+                print('{} {}:'.format(ls_name, (i // ls_dlen) % ls_dlen))
+                _print_experiment_participant(block.orig_design, e, i, min(i+ls_dlen, e_len))
         else:
             _print_experiment_participant(block.orig_design, e, 0, e_len)
 
@@ -436,6 +426,24 @@ def synthesize_trials(block: Block,
             for k in continuous_samples:
                 trials[k] = continuous_samples[k]
         # Restore ContinuousFactor to the design
+
+    if not trialss:
+        # When a coverage constraint is present, an empty result usually means the
+        # SAT solver judged the joint constraints unsatisfiable. Constraints that
+        # are not folded into coverage auto-sizing (ordering constraints and
+        # LatinSquare) are the usual cause; give the user a pointer.
+        from sweetpea._internal.constraint import _KInARow
+        cacs = [ct for ct in block.orig_constraints if isinstance(ct, CoverAllCombinations)]
+        if cacs:
+            msg = ("No trial sequences found: the constraints could not be satisfied "
+                   "together with " + " and ".join(repr(ct) for ct in cacs) + ".")
+            unmodeled = sorted(set(type(ct).__name__ for ct in block.orig_constraints
+                                   if isinstance(ct, (_KInARow, LatinSquare))))
+            if unmodeled:
+                msg += (" Constraints of kind " + ", ".join(unmodeled)
+                        + " are not folded into coverage auto-sizing; a MinimumTrials"
+                          " constraint can provide additional trials.")
+            print(msg)
 
     return trialss
 
