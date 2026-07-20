@@ -13,7 +13,7 @@ from sweetpea._internal.iter import chunk, chunk_list
 from sweetpea._internal.block import Block, BlockGeometry
 from sweetpea._internal.cross_block import MultiCrossBlockRepeat
 from sweetpea._internal.backend import LowLevelRequest, BackendRequest
-from sweetpea._internal.logic import If, Iff, And, Or, Not, Formula
+from sweetpea._internal.logic import If, Iff, And, Or, Not, Formula, FormulaWithIff
 from sweetpea._internal.primitive import DerivedFactor, DerivedLevel, Factor, Level, SimpleLevel, ContinuousFactor
 from sweetpea._internal.argcheck import argcheck, make_istuple, make_islistof
 from sweetpea._internal.weight import combination_weight
@@ -1674,7 +1674,7 @@ class CoverAllCombinations(Constraint):
         trials = list(range(1 + preamble, num_trials + 1))
 
         fresh = backend_request.fresh
-        formula_parts = cast(List[Formula], [])
+        formula_parts = cast(List[FormulaWithIff], [])
         for combo in R_free:
             levels = combo_levels[combo]
             state_vars = []
