@@ -890,13 +890,13 @@ original `inner block`.
 Latin Square Counterbalancing
 -----------------------------
 
-A *Latin Square* is pattern that orders a crossing so that successive
-diagonals are first explored, which provides a more varierty for
+A *Latin Square* is a pattern that orders a crossing so that successive
+diagonals are first explored, which provides more variety for
 combinations within a trial subsequence than could be expected
 otherwise. A Latin Square can be particularly useful in an experiment
 with multiple participants, where each participant sees only a subset
 of the possible combinations, but still sees each level that could
-contribute to a combination---and all conbinations are generated
+contribute to a combination---and all combinations are generated
 across multiple participants. SweetPea supports Latin Square
 counterbalancing through the :class:`.LatinSquare` constraint, which
 expects a list of factors that are crossed.
@@ -906,7 +906,7 @@ A 2x2 Example
 
 Suppose we have `Font` (`small` or `big`) and `Color` (`red` or
 `green`) to cross, and we don't need every participant to see every
-combination. Since these factor each have 2 levels, there are 2
+combination. Since these factors each have 2 levels, there are 2
 diagonals in a Latin Square for the factors.
 
 .. list-table:: 2x2 Latin Square Diagonals
@@ -929,7 +929,7 @@ diagonals in a Latin Square for the factors.
 - **Diagonal 1**: (small, green) and (big, red)
 
 If we simply cross the factors, there's no guarantee that both colors
-will show up in the first two trails, only that all `Font`-`Color` word
+will show up in the first two trials, only that all `Font`-`Color`
 combinations will show up over four trials.
   
   .. doctest::
@@ -1020,9 +1020,9 @@ each generated experiment into sections labelled by participant name.
 Latin Squares as Crossing
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-In the example with `Font` and `Color`, we crossed the factors to take
+In the example with `Font` and `Color`, we crossed the factors to make
 sure that each generated experiment covers all combinations. The
-:class:`LatinSquare` constraint does not require the factors that is
+:class:`LatinSquare` constraint does not require the factors that it
 is given to be crossed already. The constraint that it imposes is
 stronger than crossing in terms of trial sequences, but weaker than
 crossing because :class:`LatinSquare` does not imply a number of
@@ -1070,3 +1070,249 @@ enough trials.
     Participant 1:
     Task read | Font small | Color green
     Task read | Font big   | Color red  
+
+.. _covering-all-combinations:
+
+Covering All Combinations
+-------------------------
+
+Crossing factors guarantees that every combination of those factors
+appears, and it fixes the number of trials to match. A factor that is
+in a design but not in the crossing gets no such guarantee: the solver
+assigns its levels freely, subject only to whatever other constraints
+apply. Nothing stops it from picking the same level every time, so
+some combinations may never show up at all.
+
+The :class:`.CoverAllCombinations` constraint asks for a weaker
+guarantee than crossing: over the experiment as a whole, every
+combination of the listed factors must appear at least once.
+Individual trials still vary freely, and the design itself implies no
+particular number of trials, so SweetPea computes how many trials
+coverage needs and grows the block to fit.
+
+A Free-Factor Example
+^^^^^^^^^^^^^^^^^^^^^
+
+Suppose `task` is crossed, while `colr` and `size` are in the design
+but not crossed. Crossing `task` alone gives two trials.
+
+.. doctest::
+
+    >>> from sweetpea import (Factor, CrossBlock, CoverAllCombinations,
+    ...                       synthesize_trials, print_experiments)
+    >>> colr = Factor("colr", ["red", "green"])
+    >>> size = Factor("size", ["big", "small"])
+    >>> task = Factor("task", ["A", "B"])
+    >>> b = CrossBlock(design=[task, colr, size], crossing=[task], constraints=[])
+    >>> b.trials_per_sample()
+    2
+
+The `colr` and `size` factors are unconstrained. When we ran this
+while writing the guide, both trials came out identical apart from
+`task`, covering only one of the four `colr`-`size` combinations:
+
+.. doctest::
+    :options: +SKIP
+
+    >>> exps = synthesize_trials(b, 1)
+    >>> print_experiments(b, exps)
+    1 trial sequences found.
+    Experiment 0:
+    task B | colr red | size big
+    task A | colr red | size big
+
+Adding a :class:`.CoverAllCombinations` constraint over `colr` and
+`size` requires all four of their combinations to appear. Two trials
+cannot hold four combinations, so the block grows to four trials.
+
+.. doctest::
+
+    >>> cb = CrossBlock(design=[task, colr, size], crossing=[task],
+    ...                 constraints=[CoverAllCombinations(colr, size)])
+    >>> cb.trials_per_sample()
+    4
+
+.. doctest::
+    :options: +SKIP
+
+    >>> exps = synthesize_trials(cb, 1)
+    >>> print_experiments(cb, exps)
+    1 trial sequences found.
+    Experiment 0:
+    task B | colr red   | size big
+    task A | colr red   | size small
+    task B | colr green | size big
+    task A | colr green | size small
+
+Note that `task` is still crossed, so it stays balanced across the
+larger block; coverage grows the experiment in whole passes of the
+crossing rather than appending loose trials.
+
+How Many Trials
+^^^^^^^^^^^^^^^
+
+The trial count follows from how many combinations must be covered and
+how many of them a single pass of the crossing can supply. With
+`color` crossed and `word` free, each pass has three trials, and each
+of those trials can pair its own color with any word. There are nine
+`color`-`word` combinations to cover and three per pass, so three
+passes---nine trials---are required.
+
+.. doctest::
+
+    >>> color = Factor("color", ["red", "green", "blue"])
+    >>> word  = Factor("word",  ["red", "green", "blue"])
+    >>> b = CrossBlock(design=[color, word], crossing=[color],
+    ...                constraints=[CoverAllCombinations(color, word)])
+    >>> b.trials_per_sample()
+    9
+
+.. doctest::
+    :options: +SKIP
+
+    >>> exps = synthesize_trials(b, 1)
+    >>> print_experiments(b, exps)
+    1 trial sequences found.
+    Experiment 0:
+    color blue  | word green
+    color red   | word green
+    color blue  | word blue
+    color green | word red
+    color red   | word blue
+    color red   | word red
+    color blue  | word red
+    color green | word blue
+    color green | word green
+
+Combinations that cannot occur are not counted. An :class:`.Exclude`
+constraint removes them from the required set, which can lower the
+trial count rather than making the experiment unsatisfiable---here,
+ruling out one `word` level leaves six combinations and six trials.
+
+.. doctest::
+
+    >>> from sweetpea import Exclude
+    >>> eb = CrossBlock(design=[color, word], crossing=[color],
+    ...                 constraints=[CoverAllCombinations(color, word),
+    ...                              Exclude((word, "red"))])
+    >>> eb.trials_per_sample()
+    6
+
+Combinations that contradict the predicate of a :class:`.DerivedLevel`
+are dropped the same way.
+
+Coverage Across Participants
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Coverage applies to the experiment as a whole, so it composes with
+:class:`.Nest`. Each participant runs a pass of the inner block and
+sees only some of the combinations, while the union over participants
+covers all of them. Nesting the nine-trial
+requirement inside a two-participant outer crossing rounds up to
+twelve trials, so that each participant gets a whole number of inner
+passes.
+
+.. doctest::
+
+    >>> from sweetpea import Nest
+    >>> inner = CrossBlock(design=[color, word], crossing=[color], constraints=[])
+    >>> participant = Factor("participant", ["p1", "p2"])
+    >>> outer = CrossBlock(design=[participant], crossing=[participant],
+    ...                    constraints=[])
+    >>> nb = Nest(outer_block=outer, inner_block=inner,
+    ...           constraints=[CoverAllCombinations(color, word)])
+    >>> nb.trials_per_sample()
+    12
+
+.. doctest::
+    :options: +SKIP
+
+    >>> exps = synthesize_trials(nb, 1)
+    >>> print_experiments(nb, exps)
+    1 trial sequences found.
+    Experiment 0:
+    participant p2 | color red   | word green
+    participant p2 | color blue  | word green
+    participant p2 | color green | word green
+    participant p1 | color green | word red
+    participant p1 | color blue  | word blue
+    participant p1 | color red   | word red
+    participant p1 | color green | word blue
+    participant p1 | color blue  | word red
+    participant p1 | color red   | word red
+    participant p2 | color green | word blue
+    participant p2 | color blue  | word red
+    participant p2 | color red   | word blue
+
+Neither participant saw all nine combinations---each repeated one and
+missed three---but between them every combination appeared. A
+:class:`.CoverAllCombinations` constraint can also be attached to a
+:class:`.MultiCrossBlock`, a :class:`.Merge`, or a :class:`.Repeat`.
+
+Interaction With Other Constraints
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Because coverage decides the number of trials, it has to account for
+other constraints that compete for the same trials. Constraints that
+fix or limit the levels of a listed factor---:class:`.Pin`,
+:class:`.ExactlyK`, and :class:`.Sequential`---are folded into that
+calculation. A :class:`.Pin` claims a trial for a specific level, for
+instance, leaving one fewer trial available for coverage and pushing
+the block up to a fourth pass.
+
+.. doctest::
+
+    >>> from sweetpea import Pin
+    >>> pb = CrossBlock(design=[color, word], crossing=[color],
+    ...                 constraints=[CoverAllCombinations(color, word),
+    ...                              Pin(0, (word, "red"))])
+    >>> pb.trials_per_sample()
+    12
+
+When such a constraint cannot be reconciled at any number of trials,
+the conflict is reported as the block is built. Covering all
+combinations puts `word` at `red` in at least three trials, so an
+:class:`.ExactlyK` allowing only one is impossible no matter how long
+the experiment runs.
+
+.. doctest::
+
+    >>> from sweetpea import ExactlyK
+    >>> CrossBlock(design=[color, word], crossing=[color],
+    ...            constraints=[CoverAllCombinations(color, word),
+    ...                         ExactlyK(1, (word, "red"))])
+    Traceback (most recent call last):
+      ...
+    ValueError: ('CoverAllCombinations', "covering all combinations requires at least 3 trials with 'word red' but an ExactlyK constraint allows exactly 1")
+
+Ordering constraints---the in-a-row family and
+:class:`.LatinSquare`---are *not* folded into the trial count, since
+they restrict how trials may be arranged rather than how many are
+needed. The solver arbitrates those instead. If they turn out to
+conflict with coverage, synthesis finds nothing and reports which
+constraints were left out of the calculation, so that you can supply
+more trials with a :class:`.MinimumTrials` constraint.
+
+.. doctest::
+    :options: +SKIP
+
+    >>> from sweetpea import AtLeastKInARow
+    >>> ub = CrossBlock(design=[color, word], crossing=[color],
+    ...                 constraints=[CoverAllCombinations(color, word),
+    ...                              AtLeastKInARow(7, (word, "red"))])
+    >>> exps = synthesize_trials(ub, 1)
+    Sampling 1 trial sequences using NonUniformGen.
+    Encoding experiment constraints...
+    Running CryptoMiniSat...
+    No trial sequences found: the constraints could not be satisfied together with CoverAllCombinations(color, word). Constraints of kind AtLeastKInARow are not folded into coverage auto-sizing; a MinimumTrials constraint can provide additional trials.
+    >>> exps
+    []
+
+Weighted Levels
+^^^^^^^^^^^^^^^
+
+Weights on a crossed factor change how many trials a pass contains,
+and coverage takes that into account when sizing the block. The levels
+of the factors listed in :class:`.CoverAllCombinations` itself must be
+unweighted, however, since the meaning of a weight on a covered
+combination is not currently defined.

@@ -121,7 +121,7 @@ Constraints
 .. class:: sweetpea.LatinSquare(factors)
 
               Constrains an experiment so that the levels of `factors`
-              are combied in a Latin Square pattern. If the factor in
+              are combined in a Latin Square pattern. If the factor in
               `factors` with the most levels has N levels, then every
               N trials will include every level of every factor in
               `factors`. Furthermore, each subsequent sequence of N
@@ -132,7 +132,7 @@ Constraints
               The given `factors` are typically crossed in an
               experiment description, but they are not required to be
               crossed explicitly; a :class:`LatinSquare` constraint
-              effectivley forces a crossing as long as an experiment
+              effectively forces a crossing as long as an experiment
               includes enough trials.
 
               See :ref:`Latin Square Counterbalancing <latin-square-counterbalancing>`
@@ -140,6 +140,46 @@ Constraints
 
               :param factors: the factors forming the Latin Square pattern
               :type factors: List[Factor]
+              :rtype: Constraint
+
+.. class:: sweetpea.CoverAllCombinations(*factors)
+
+              Constrains an experiment so that its trials collectively
+              include every realizable combination of the levels of
+              `factors` at least once. A factor that is left out of a
+              crossing is otherwise assigned freely by the solver, so
+              nothing normally guarantees that a particular combination
+              ever appears; this constraint coordinates those free
+              choices.
+
+              Unlike most constraints, :class:`CoverAllCombinations`
+              can increase the number of trials: the count needed for
+              coverage is computed when the block is constructed, and
+              the block grows to fit, rounded up so that every crossing
+              still gets complete passes.
+
+              A combination that cannot occur is not required. That
+              includes combinations removed by an :class:`.Exclude`
+              constraint and combinations that contradict the predicate
+              of a :class:`.DerivedLevel`.
+
+              The trial count reconciles the effects of :class:`.Pin`,
+              :class:`.ExactlyK`, and :class:`.Sequential` constraints
+              on the listed factors. Ordering constraints such as
+              :class:`.AtMostKInARow` and :class:`.LatinSquare` are left
+              to the solver instead; when one of those conflicts with
+              coverage, :func:`.synthesize_trials` finds no sequences
+              and reports which constraints were not accounted for.
+
+              Levels of the listed factors must be unweighted, but
+              weighted levels elsewhere in the crossing are supported,
+              and they change the trial count accordingly.
+
+              See :ref:`Covering All Combinations <covering-all-combinations>`
+              for more information.
+
+              :param factors: the factors whose level combinations must all appear
+              :type factors: Factor
               :rtype: Constraint
 
 .. class:: sweetpea.ContinuousConstraint(factors, predicate)

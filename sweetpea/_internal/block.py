@@ -45,6 +45,10 @@ class Block:
     correctly.
     """
 
+    # The constraints as given by the user, before desugaring; assigned by
+    # subclasses during construction.
+    orig_constraints: List[Constraint]
+
     def __init__(self,
                  design: List[Factor],
                  crossings: List[List[Factor]],
@@ -288,6 +292,13 @@ class Block:
         this block configuration.
 
         Analogous to the old ``__fully_cross_size`` function.
+        """
+        pass
+
+    @abstractmethod
+    def common_preamble_size(self):
+        """Indicates the number of leading preamble trials shared by all of the
+        block's crossings.
         """
         pass
 

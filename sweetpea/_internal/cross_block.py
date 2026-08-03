@@ -91,7 +91,7 @@ class MultiCrossBlockRepeat(Block):
 
         crossings = [c for c in crossings if len(c) > 0]
 
-        from sweetpea._internal.constraint import Cross, Consistency, Sustain
+        from sweetpea._internal.constraint import Cross, Consistency, Sustain, CoverAllCombinations
         from sweetpea._internal.derivation_processor import DerivationProcessor
         self.orig_design = design
         self.orig_crossings = crossings
@@ -114,6 +114,21 @@ class MultiCrossBlockRepeat(Block):
         
         if not all([s == self.preamble_sizes[0] for s in self.preamble_sizes]) and self.alignment == AlignmentMode.EQUAL_PREAMBLE:
             raise RuntimeError("AlignmentMode.EQUAL_PREAMBLE not allowed with different preamble sizes")
+
+        # Auto-size for CoverAllCombinations: raise the trial count to the minimum
+        # needed for coverage. Must run before trials_per_sample() is first cached.
+        for ct in self.constraints:
+            if isinstance(ct, CoverAllCombinations):
+                target = ct.autosize_trials(self)
+                if target > self.min_trials:
+                    self.min_trials = target
+                    for count in self.crossing_sustain_counts:
+                        # keep min_trials a multiple of each sustain count
+                        if (self.min_trials // count) * count != self.min_trials:
+                            self.min_trials = ((self.min_trials // count) + 1) * count
+                    # A constraint's validate() (e.g. Pin's range check) may have
+                    # already cached the pre-growth trial count; invalidate it.
+                    self._trials_per_sample = None
 
         if mode != RepeatMode.REPEAT:
             num_trials = self.trials_per_sample()
@@ -655,6 +670,14 @@ class Nest(MultiCrossBlockRepeat):
         for ct in outer_constraints:
             ct.sustain_within_block(inner_len)
         all_constraints = outer_constraints + inner_constraints + constraints
+
+        # A CoverAllCombinations constraint analyzes the inner block's crossing;
+        # _create's auto-sizing reads this.
+        from sweetpea._internal.constraint import CoverAllCombinations
+        for ct in constraints:
+            if isinstance(ct, CoverAllCombinations):
+                ct._inner_block = inner_block
+
         self._create(
             who=who,
             design=design,

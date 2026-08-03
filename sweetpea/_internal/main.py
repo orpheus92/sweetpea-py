@@ -22,6 +22,7 @@ __all__ = [
     'ExactlyKInARow',
     'LatinSquare',
     'Sequential',
+    'CoverAllCombinations',
 
     'Gen', 'RandomGen', 'IterateSATGen',
     'CMSGen', 'UniGen', 'IterateILPGen',
@@ -53,7 +54,8 @@ from sweetpea._internal.constraint import (
     Exclude, Pin, MinimumTrials,
     ExactlyK, AtMostKInARow, AtLeastKInARow, ExactlyKInARow,
     LatinSquare,
-    Sequential
+    Sequential,
+    CoverAllCombinations
 )
 from sweetpea._internal.sampling_strategy.base import Gen
 from sweetpea._internal.sampling_strategy.uniform import UniformGen
@@ -185,7 +187,7 @@ def print_experiments(block, experiments):
             print('')
             for i in range(0, e_len, ls_dlen):
                 print('{} {}:'.format(ls_name, (i // ls_dlen) % ls_dlen))
-                _print_experiment_participant(block.orig_design,  e, i, min(i+ls_dlen, e_len))
+                _print_experiment_participant(block.orig_design, e, i, min(i+ls_dlen, e_len))
         else:
             _print_experiment_participant(block.orig_design, e, 0, e_len)
 
@@ -424,6 +426,23 @@ def synthesize_trials(block: Block,
             for k in continuous_samples:
                 trials[k] = continuous_samples[k]
         # Restore ContinuousFactor to the design
+
+    if not trialss:
+        # With a coverage constraint, an empty result means the solver found the
+        # joint constraints unsatisfiable. Point at the constraints that coverage
+        # auto-sizing cannot account for (ordering constraints and LatinSquare).
+        from sweetpea._internal.constraint import _KInARow
+        cacs = [ct for ct in block.orig_constraints if isinstance(ct, CoverAllCombinations)]
+        if cacs:
+            msg = ("No trial sequences found: the constraints could not be satisfied "
+                   "together with " + " and ".join(repr(ct) for ct in cacs) + ".")
+            unmodeled = sorted(set(type(ct).__name__ for ct in block.orig_constraints
+                                   if isinstance(ct, (_KInARow, LatinSquare))))
+            if unmodeled:
+                msg += (" Constraints of kind " + ", ".join(unmodeled)
+                        + " are not folded into coverage auto-sizing; a MinimumTrials"
+                          " constraint can provide additional trials.")
+            print(msg)
 
     return trialss
 
