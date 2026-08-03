@@ -307,7 +307,7 @@ using :func:`.synthesize_trials`. Print generated trials using
 
    When `block` includes a :class:`.LatinSquare` constraint with a
    name, then each sample is further divided into segments for
-   differen diagonals.
+   different diagonals.
 
    :param block: the experiment description that was provided to :func:`.synthesize_trials`
    :type block: Block
